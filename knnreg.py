@@ -9,13 +9,13 @@ X.columns = [f'col_{col}' for col in X.columns]
 
 
 class MyKNNReg:
-    def __init__(self, k=3, metric='euclidean', weights='uniform'):
+    def __init__(self, k=3, metric='euclidean', weight='uniform'):
         self.k = k
         self.train_size = None
         self.X_train = None
         self.y_train = None
         self.metric = metric
-        self.weights = weights
+        self.weight = weight
         
     def __repr__(self):
         return f'MyKNNReg class: k={self.k}'
@@ -42,22 +42,15 @@ class MyKNNReg:
             k_nearest_distances = distances[k_indices]
             
             # Вычисляем веса
-            if self.weights == 'uniform':
-                weights = np.ones(self.k)  # Все веса равны 1
-            elif self.weights == 'distance':
-                # Обратные расстояния как веса
-                weights = 1 / (k_nearest_distances + 1e-12)
-            elif self.weights == 'rank':
-                # Обратные ранги как веса
-                weights = 1 / (np.arange(1, self.k + 1))
-            else:
-                raise ValueError("weights must be one of ['uniform', 'distance', 'rank']")
+            weight = {'distance': 1 / (k_nearest_distances + 1e-12),
+                            'rank': 1 / (np.arange(1, self.k + 1)), 
+                            'uniform': np.ones(self.k)}[self.weight]
             
             # Нормализуем веса
-            weights /= weights.sum()
+            weight /= weight.sum()
             
             # Вычисляем предсказание с учетом весов
-            prediction = np.dot(weights, k_nearest_targets)
+            prediction = np.dot(weight, k_nearest_targets)
             predictions.append(prediction)
         
         return np.array(predictions)
@@ -71,8 +64,7 @@ class MyKNNReg:
         }
         return metric[self.metric](x1, x2)
     
-    
-reg = MyKNNReg(k=1, metric='cosine', weights='rank')
+reg = MyKNNReg(k=1, metric='cosine', weight='rank')
 reg.fit(X, y)
 
 y_pred = reg.predict(X)
