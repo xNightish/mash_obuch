@@ -103,10 +103,9 @@ class MyTreeClf:
 
         return graph
     
-print(df.head(5))
 
 # Создаем и тестируем классификатор
-clf = MyTreeClf(max_depth=3, min_samples_split=2, max_leafs=1)
+clf = MyTreeClf(max_depth=15, min_samples_split=20, max_leafs=30)
 clf.fit(X, y)
 
 # Визуализируем дерево
