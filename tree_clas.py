@@ -103,7 +103,25 @@ class MyTreeClf:
 
         return graph
     
+    
+    def _class(self, row):
+        node = self.tree
+        while 'leaf' not in node:
+            col_name = list(node.keys())[0]
+            split_value = list(node[col_name].keys())[0].split()[1]
+            if row[col_name] <= float(split_value):
+                node = node[col_name][f'<= {split_value}']
+            else:
+                node = node[col_name][f'> {split_value}']
+        return node['leaf'].get(1, 0)  # Вернуть вероятность класса 1
 
+    def predict_proba(self, X):
+        return X.apply(self._class, axis=1)
+
+    def predict(self, X):
+        return self.predict_proba(X).apply(lambda x: 1 if x > 0.5 else 0)
+    
+    
 # Создаем и тестируем классификатор
 clf = MyTreeClf(max_depth=15, min_samples_split=20, max_leafs=30)
 clf.fit(X, y)
@@ -114,3 +132,9 @@ tree_graph.render('decision_tree', format='png', cleanup=True)  # Сохраня
 
 print(clf.leafs_cnt)
 
+# Предсказываем вероятности классов
+y_proba = clf.predict(X)
+
+# Проверяем точность классификатора
+accuracy = (y_proba == y).mean()
+print(f'Accuracy: {accuracy}')
