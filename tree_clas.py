@@ -9,12 +9,14 @@ X, y = df.iloc[:, :4], df['target']
 
 class MyTreeClf:
     
-    def __init__(self, max_depth=15, min_samples_split=2, max_leafs=20):
+    def __init__(self, max_depth=15, min_samples_split=2, max_leafs=20, bins=None):
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.max_leafs = max_leafs
-        self.leafs_cnt = 0  # Счетчик листьев
-        self.tree = None  # Дерево решений
+        self.bins = bins
+        self.leafs_cnt = 0 
+        self.tree = None
+        self.histograms = {}
 
     def entropy(self, y):
         value_counts = y.value_counts(normalize=True)
@@ -30,9 +32,21 @@ class MyTreeClf:
             unique_values = X[col_name].unique()
             unique_values.sort()
 
-            for i in range(len(unique_values) - 1):
-                split_value = (unique_values[i] + unique_values[i + 1]) / 2
+            # Определяем разделители
+            if self.bins is not None:
+                # Используем гистограмму для определения разделителей
+                if col_name not in self.histograms:
+                    hist, bin_edges = np.histogram(X[col_name], bins=self.bins)
+                    self.histograms[col_name] = bin_edges[1:-1]  # Убираем крайние значения
+                split_values = self.histograms[col_name]
+            else:
+                split_values = unique_values[:-1] + np.diff(unique_values) / 2  # Обычные разделители
 
+            # Проверяем, есть ли разделители
+            if len(split_values) == 0:
+                continue
+
+            for split_value in split_values:
                 left_mask = X[col_name] <= split_value
                 right_mask = X[col_name] > split_value
 
@@ -68,6 +82,11 @@ class MyTreeClf:
             return
 
         col_name, split_value, ig = self.get_best_split(X, y)
+
+        if col_name is None:  # Если нет подходящего разделителя
+            node['leaf'] = y.value_counts(normalize=True).to_dict()
+            self.leafs_cnt += 1
+            return
 
         node[col_name] = {}
         node[col_name][f'<= {split_value}'] = {}
@@ -113,7 +132,7 @@ class MyTreeClf:
                 node = node[col_name][f'<= {split_value}']
             else:
                 node = node[col_name][f'> {split_value}']
-        return node['leaf'].get(1, 0)  # Вернуть вероятность класса 1
+        return node['leaf'].get(1, 0)
 
     def predict_proba(self, X):
         return X.apply(self._class, axis=1)
@@ -121,9 +140,21 @@ class MyTreeClf:
     def predict(self, X):
         return self.predict_proba(X).apply(lambda x: 1 if x > 0.5 else 0)
     
+    def sum_leaf_probabilities(self):
+        return self._sum_leaf_probabilities(self.tree)
+
+    def _sum_leaf_probabilities(self, node):
+        if 'leaf' in node:
+            return node['leaf'].get(1, 0)  # Вернуть вероятность класса 1 в листе
+        else:
+            total_probability = 0
+            for key, value in node.items():
+                total_probability += self._sum_leaf_probabilities(value)
+            return total_probability
+    
     
 # Создаем и тестируем классификатор
-clf = MyTreeClf(max_depth=15, min_samples_split=20, max_leafs=30)
+clf = MyTreeClf(max_depth=4, min_samples_split=100, max_leafs=17, bins=16)
 clf.fit(X, y)
 
 # Визуализируем дерево
@@ -138,3 +169,7 @@ y_proba = clf.predict(X)
 # Проверяем точность классификатора
 accuracy = (y_proba == y).mean()
 print(f'Accuracy: {accuracy}')
+
+# Получаем сумму вероятностей класса 1 на всех листьях
+total_probability = clf.sum_leaf_probabilities()
+print(f'Total probability of class 1 on leaves: {total_probability}')
