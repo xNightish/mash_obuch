@@ -19,6 +19,7 @@ class MyTreeClf:
         self.histograms = {}
         self.criterion = criterion
         self.reserved_leaves = 0
+        self.fi = {col: 0 for col in X.columns}
 
     def entropy(self, y):
         value_counts = y.value_counts(normalize=True)
@@ -27,7 +28,6 @@ class MyTreeClf:
     def gini(self, y):
         value_counts = y.value_counts(normalize=True)
         return 1 - np.sum(value_counts**2)
-    
     
     def impurity(self, y):
         criterion = {'entropy': self.entropy, 'gini': self.gini}
@@ -46,15 +46,10 @@ class MyTreeClf:
             if self.bins is not None:
                 if col_name not in self.histograms:
                     hist, bin_edges = np.histogram(X[col_name], bins=self.bins)
-                    self.histograms[col_name] = bin_edges[1:-1]  # Убираем крайние значения
+                    self.histograms[col_name] = bin_edges[1:-1]
                 split_values = self.histograms[col_name]
             else:
-                split_values = unique_values[:-1] + np.diff(unique_values) / 2  # Обычные разделители
-
-            # Проверяем, есть ли разделители
-            if len(split_values) == 0:
-                continue
-
+                split_values = unique_values[:-1] + np.diff(unique_values) / 2 
             for split_value in split_values:
                 left_mask = X[col_name] <= split_value
                 right_mask = X[col_name] > split_value
@@ -67,26 +62,36 @@ class MyTreeClf:
 
                 left_impurity = self.impurity(left_y)
                 right_impurity = self.impurity(right_y)
+                
 
-                ig = parent_impurity - (len(left_y) / len(y) * left_impurity + len(right_y) / len(y) * right_impurity)
+                left_impurity *= len(left_y) / len(y)
+                right_impurity *= len(right_y) / len(y)
+                ig = parent_impurity - left_impurity - right_impurity
+                
+                Fi = len(y) / self.N * ig
 
                 if ig > best_ig:
                     best_ig = ig
                     best_col_name = col_name
                     best_split_value = split_value
+                    best_fi = Fi
+
+        self.fi[best_col_name] += best_fi
 
         return best_col_name, best_split_value, best_ig
+
     
     def fit(self, X, y, depth=0, node=None):
         if node is None:
             self.tree = {}
             node = self.tree
             is_root = True
+            self.N = len(y)
         else:
             is_root = False
 
         if (depth >= self.max_depth or len(y) < self.min_samples_split or len(set(y)) == 1 or 
-            self.max_leafs + 1 - self.leafs_cnt - self.reserved_leaves <= 0) and not is_root:
+            self.max_leafs - self.leafs_cnt - self.reserved_leaves <= 0) and not is_root:
             node['leaf'] = y.value_counts(normalize=True).to_dict()
             self.leafs_cnt += 1
             return
@@ -113,6 +118,44 @@ class MyTreeClf:
         self.reserved_leaves -= 1
 
 
+
+    def _class(self, row):
+        node = self.tree
+        while True:
+            if 'leaf' in node:
+                return node['leaf'].get(1, 0) 
+            if not node or not node.keys():
+                return 0 
+            col_name = list(node.keys())[0]
+            if col_name not in node:
+                return 0 
+            split_value = list(node[col_name].keys())[0].split()[1]
+            if row[col_name] <= float(split_value):
+                node = node[col_name][f'<= {split_value}']
+            else:
+                node = node[col_name][f'> {split_value}']
+
+    def predict_proba(self, X):
+        return X.apply(self._class, axis=1)
+
+    def predict(self, X):
+        return self.predict_proba(X).apply(lambda x: 1 if x > 0.5 else 0)
+    
+    def sum_leaf_probabilities(self):
+        return self._sum_leaf_probabilities(self.tree)
+
+    def _sum_leaf_probabilities(self, node):
+        if 'leaf' in node:
+            return node['leaf'].get(1, 0)  # Вернуть вероятность класса 1 в листе
+        else:
+            total_probability = 0
+            for key, value in node.items():
+                total_probability += self._sum_leaf_probabilities(value)
+            return total_probability
+
+    def get_feature_importance(self):
+        return self.fi  # Возвращаем важность признаков
+    
     def visualize_tree(self, node=None, graph=None, parent=None, edge_label=''):
         if graph is None:
             graph = Digraph()
@@ -155,41 +198,6 @@ class MyTreeClf:
 
         return graph
 
-    def _class(self, row):
-        node = self.tree
-        while True:
-            if 'leaf' in node:
-                return node['leaf'].get(1, 0) 
-            if not node or not node.keys():
-                return 0 
-            col_name = list(node.keys())[0]
-            if col_name not in node:
-                return 0 
-            split_value = list(node[col_name].keys())[0].split()[1]
-            if row[col_name] <= float(split_value):
-                node = node[col_name][f'<= {split_value}']
-            else:
-                node = node[col_name][f'> {split_value}']
-
-    def predict_proba(self, X):
-        return X.apply(self._class, axis=1)
-
-    def predict(self, X):
-        return self.predict_proba(X).apply(lambda x: 1 if x > 0.5 else 0)
-    
-    def sum_leaf_probabilities(self):
-        return self._sum_leaf_probabilities(self.tree)
-
-    def _sum_leaf_probabilities(self, node):
-        if 'leaf' in node:
-            return node['leaf'].get(1, 0)  # Вернуть вероятность класса 1 в листе
-        else:
-            total_probability = 0
-            for key, value in node.items():
-                total_probability += self._sum_leaf_probabilities(value)
-            return total_probability
-    
-    
 # Создаем и тестируем классификатор
 clf = MyTreeClf(max_depth=10, min_samples_split=40, max_leafs=21, bins=10, criterion='gini')
 clf.fit(X, y)
@@ -210,3 +218,9 @@ print(f'Accuracy: {accuracy}')
 # Получаем сумму вероятностей класса 1 на всех листьях
 total_probability = clf.sum_leaf_probabilities()
 print(f'Total probability of class 1 on leaves: {total_probability}')
+
+# Выводим важность признаков
+feature_importance = clf.get_feature_importance()
+print('Feature Importances:')
+for feature, importance in feature_importance.items():
+    print(f'{feature}: {importance}')
