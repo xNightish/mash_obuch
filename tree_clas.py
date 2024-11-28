@@ -1,3 +1,4 @@
+from typing_extensions import OrderedDict
 import numpy as np
 import pandas as pd
 from graphviz import Digraph
@@ -14,12 +15,13 @@ class MyTreeClf:
         self.min_samples_split = min_samples_split
         self.max_leafs = max_leafs
         self.bins = bins
-        self.leafs_cnt = 0 
+        self.leafs_cnt = 0
         self.tree = None
         self.histograms = {}
         self.criterion = criterion
-        self.reserved_leaves = 0
         self.fi = {col: 0 for col in X.columns}
+        # self.reserved_leaves = 0
+        
 
     def entropy(self, y):
         value_counts = y.value_counts(normalize=True)
@@ -50,6 +52,7 @@ class MyTreeClf:
                 split_values = self.histograms[col_name]
             else:
                 split_values = unique_values[:-1] + np.diff(unique_values) / 2 
+
             for split_value in split_values:
                 left_mask = X[col_name] <= split_value
                 right_mask = X[col_name] > split_value
@@ -62,12 +65,11 @@ class MyTreeClf:
 
                 left_impurity = self.impurity(left_y)
                 right_impurity = self.impurity(right_y)
-                
 
                 left_impurity *= len(left_y) / len(y)
                 right_impurity *= len(right_y) / len(y)
                 ig = parent_impurity - left_impurity - right_impurity
-                
+
                 Fi = len(y) / self.N * ig
 
                 if ig > best_ig:
@@ -76,10 +78,13 @@ class MyTreeClf:
                     best_split_value = split_value
                     best_fi = Fi
 
+        # Проверка на случай, если не найдено подходящее разбиение
+        if best_col_name is None:
+            return None, None, None
+
         self.fi[best_col_name] += best_fi
 
         return best_col_name, best_split_value, best_ig
-
     
     def fit(self, X, y, depth=0, node=None):
         if node is None:
@@ -91,7 +96,8 @@ class MyTreeClf:
             is_root = False
 
         if (depth >= self.max_depth or len(y) < self.min_samples_split or len(set(y)) == 1 or 
-            self.max_leafs - self.leafs_cnt - self.reserved_leaves <= 0) and not is_root:
+            # self.max_leafs - self.leafs_cnt - self.reserved_leaves <= 0) and not is_root:
+            self.max_leafs - self.leafs_cnt <= 1) and not is_root:
             node['leaf'] = y.value_counts(normalize=True).to_dict()
             self.leafs_cnt += 1
             return
@@ -107,7 +113,7 @@ class MyTreeClf:
         node[col_name][f'<= {split_value}'] = {}
         node[col_name][f'> {split_value}'] = {}
 
-        self.reserved_leaves += 1
+        # self.reserved_leaves += 1
 
         left_mask = X[col_name] <= split_value
         right_mask = X[col_name] > split_value
@@ -115,8 +121,7 @@ class MyTreeClf:
         self.fit(X[left_mask], y[left_mask], depth + 1, node[col_name][f'<= {split_value}'])
         self.fit(X[right_mask], y[right_mask], depth + 1, node[col_name][f'> {split_value}'])
         
-        self.reserved_leaves -= 1
-
+        # self.reserved_leaves -= 1
 
 
     def _class(self, row):
@@ -199,7 +204,17 @@ class MyTreeClf:
         return graph
 
 # Создаем и тестируем классификатор
-clf = MyTreeClf(max_depth=10, min_samples_split=40, max_leafs=21, bins=10, criterion='gini')
+tree_configs = OrderedDict([
+    (0, MyTreeClf(max_depth=3, min_samples_split=2, max_leafs=1, bins=10, criterion='gini')),
+    (1, MyTreeClf(max_depth=1, min_samples_split=1, max_leafs=2, bins=8, criterion='gini')),
+    (2, MyTreeClf(max_depth=3, min_samples_split=2, max_leafs=5, bins=None, criterion='gini')),
+    (3, MyTreeClf(max_depth=5, min_samples_split=200, max_leafs=10, bins=4, criterion='entropy')),
+    (4, MyTreeClf(max_depth=4, min_samples_split=100, max_leafs=17, bins=16, criterion='gini')),
+    (5, MyTreeClf(max_depth=10, min_samples_split=40, max_leafs=21, bins=10, criterion='gini')),
+    (6, MyTreeClf(max_depth=15, min_samples_split=20, max_leafs=30, bins=6, criterion='gini')),
+])
+
+clf = tree_configs[5]
 clf.fit(X, y)
 
 # Визуализируем дерево
