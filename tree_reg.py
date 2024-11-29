@@ -150,7 +150,7 @@ tree_configs = OrderedDict([
     (7, MyTreeReg(max_depth=15, min_samples_split=35, max_leafs=30)),
 ])
 
-clf = tree_configs[6]
+clf = tree_configs[3]
 clf.fit(X, y)
 
 print(clf.leafs_cnt)
